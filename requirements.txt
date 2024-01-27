@@ -1,0 +1,6 @@
+wget
+pygame
+numpy
+torch
+torchvision
+torchaudio
