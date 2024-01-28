@@ -19,6 +19,8 @@ def setup_environment():
         os.remove(c.GAME_ZIP_FILE_NAME)
         with open(c.SETUP_DONE_FILE, "w") as f:
             f.write("ok")
+        print("Pacman wurde heruntergeladen. Bitte erneut öffnen")
+        exit()
     os.chdir(c.GAME_DIR)
     print(os.getcwd())
 
