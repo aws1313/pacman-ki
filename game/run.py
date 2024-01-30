@@ -100,7 +100,7 @@ class GameController(object):
         
 
     def update(self):
-        dt = self.clock.tick(300)/20
+        dt = self.clock.tick(300)/100
         self.textgroup.update(dt)
         self.pellets.update(dt)
         if not self.pause.paused:
