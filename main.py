@@ -78,6 +78,9 @@ class PacmanKI:
         pellets = []
         pellets.extend(self.game.pellets.pelletList)
         pellets.extend(self.game.pallets_eaten)
+        print(len(self.game.pallets_eaten))
+        print(len(self.game.pellets.pelletList))
+
         pellets.sort(key=operator.attrgetter('id'))
         ps = []
         for p in pellets:
