@@ -100,7 +100,7 @@ class GameController(object):
         
 
     def update(self):
-        dt = self.clock.tick(300)/20
+        dt = self.clock.tick(500)/3000
         self.textgroup.update(dt)
         self.pellets.update(dt)
         if not self.pause.paused:
@@ -164,7 +164,7 @@ class GameController(object):
                 self.flashBG = True
                 self.hideEntities()
 
-                self.restartGame()
+                self.pause.setPause(pauseTime=3, func=self.nextLevel)
 
 
     def checkGhostEvents(self):
@@ -221,7 +221,7 @@ class GameController(object):
 
     def nextLevel(self):
         self.showEntities()
-        self.level += 1
+        self.pallets_eaten = []
         self.pause.paused = True
         self.startGame()
         self.textgroup.updateLevel(self.level)
