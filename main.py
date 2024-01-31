@@ -54,10 +54,10 @@ class PacmanKI:
 
         if random() >= eps_threshold:
             act = torch.argmax(self.dqn(torch.tensor([old_state], dtype=torch.float))).item()
-            print("planned")
+            #print("planned")
         else:
             act = randint(0, 4)
-            print("rand")
+            #("rand")
 
         self.steps_done += 1
 
@@ -78,8 +78,8 @@ class PacmanKI:
         pellets = []
         pellets.extend(self.game.pellets.pelletList)
         pellets.extend(self.game.pallets_eaten)
-        print(len(self.game.pallets_eaten))
-        print(len(self.game.pellets.pelletList))
+        #print(len(self.game.pallets_eaten))
+        #print(len(self.game.pellets.pelletList))
 
         pellets.sort(key=operator.attrgetter('id'))
         ps = []
@@ -100,7 +100,7 @@ class PacmanKI:
     def eval_reward(self):
         r = self.game.pellets.numEaten - self.last_pallets_eaten
         self.last_pallets_eaten = self.game.pellets.numEaten
-        print(r)
+        #print(r)
         return r
 
     def cache(self, old_state, new_state, action, reward):
@@ -124,8 +124,36 @@ class PacmanKI:
         self.game.ghosts.ghosts = []
         self.game.pause.setPause(playerPaused=True)
         self.game.update()
+
+        stuck_steps = 0
+        last_position_x = 0
+        last_position_y = 0
+
         while True:
-            self.action_step(self.eval_state())
+            ## x und y sind die Koordinaten des Tiles auf der Map
+            ## Ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
+            x = round((self.game.pacman.position.x + 4) / 16)
+            y = round(self.game.pacman.position.y / 16)
+            if last_position_x != x or last_position_y != y:
+                ## Pacman befindet sich auf einem neuen Tile
+                print(str(x) + " " + str(y))
+                self.action_step(self.eval_state())
+                stuck_steps = 0
+
+
+            else:
+                stuck_steps += 1
+                print("Same Position"+ str(stuck_steps))
+                self.game.update()
+                if stuck_steps > 4:
+                    ## Pacman hat nach in Richtung des Richtung der Wand bewegt
+                    ## Wir müssen die Richtung ändern
+                    self.action_step(self.eval_state())
+                    stuck_steps = 0
+
+            last_position_x = x
+            last_position_y = y
+
 
 
 if __name__ == '__main__':
