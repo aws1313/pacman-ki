@@ -40,7 +40,7 @@ class PacmanKI:
     def __init__(self):
         self.game = GameController()
         self.mem = deque(maxlen=MEM_SIZE)
-        self.dqn = DQN(2016, 16, 5, LR, GAMMA)  # .to(DEVICE)
+        self.dqn = DQN(2016, 16, 4, LR, GAMMA)  # .to(DEVICE)
         self.game_count = 0
         self.epsilon = 0
         self.steps_done = 0
@@ -58,7 +58,7 @@ class PacmanKI:
             act = torch.argmax(self.dqn(old_state)).item()
             print("planned")
         else:
-            act = randint(0, 4)
+            act = randint(0, 3)
             print("rand")
 
         self.steps_done += 1
@@ -138,11 +138,34 @@ class PacmanKI:
         else:
             return self.mem
 
-    def set_direction(self, direction: int):
-        dirs = [STOP, UP, RIGHT, DOWN, LEFT]
+    def set_direction(self, relative_direction: int):
+        ## direction is a int between 0 and 3
+        ## 0 = turn left
+        ## 1 = turn right
+        ## 2 = go straight
+        ## 3 = turn around
+        # Convert the relative direction to an absolute direction
 
-        self.game.pacman.want_direction = dirs[direction]
-        return dirs[direction]
+        current_direction = self.game.pacman.want_direction
+        directions = [LEFT, UP, RIGHT, DOWN]
+        if current_direction == STOP:
+            current_direction = LEFT
+        print("Current Direction:"+str(current_direction))
+
+        if current_direction not in directions:
+            raise ValueError("Invalid current direction")
+
+        if relative_direction < 0 or relative_direction > 3:
+            raise ValueError("Invalid relative direction")
+
+        # Calculate the new index based on the relative direction
+        new_index = (directions.index(current_direction) + relative_direction) % 4
+
+        # Return the new absolute direction
+        print("Direction:"+str(relative_direction)+" -> "+str(directions[new_index]))
+        self.game.pacman.want_direction = directions[new_index]
+        return directions[new_index]
+
 
     def run(self):
         self.game.startGame()
