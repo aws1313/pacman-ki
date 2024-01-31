@@ -25,15 +25,18 @@ class DQN(nn.Module):
 
 
     def forward(self, x):
-        x=x.unsqueeze(0)
+        if len(x.shape)==1:
+            x=x.unsqueeze(0)
         x = self.flatten(x)
         return self.rls(x)
 
-    def save(self):
-        torch.save(self.state_dict(), './model.pth')
+    def save(self, name):
+        torch.save(self.state_dict(), name)
 
     def train_step(self, old_state, new_state, action, reward):
-        action = torch.tensor(action, dtype = torch.long)
+        old_state = torch.from_numpy(old_state)
+        new_state = torch.from_numpy(new_state)
+        action = torch.tensor(action, dtype = torch.float)
         reward = torch.tensor(reward, dtype=torch.float)
         print(old_state.shape)
         if len(old_state.shape) == 1:
@@ -47,7 +50,7 @@ class DQN(nn.Module):
 
         for i in range(len(old_state)):
             Q_new = reward[i]
-            Q_new = reward[i] + self.gamma * torch.max(self(new_state[i].unsqueeze(0)))
+            Q_new = reward[i] + self.gamma * torch.max(self(new_state[i]))
             target_prediction[i][torch.argmax(action[i]).item()] = Q_new
 
         self.optimizer.zero_grad()

@@ -18,10 +18,10 @@ from collections import deque, namedtuple
 from dqn_model import DQN
 import torch
 import operator
-from torch import nn
 import math
 from random import sample, random, randint
 import numpy as np
+import datetime
 
 MEM_SIZE = 100000
 BATCH_SIZE = 1000
@@ -48,30 +48,37 @@ class PacmanKI:
         self.last_pac_pos = None
 
     def train_long(self):
-        pass
+        cache = self.sample_cache()
+        old_states, new_states, actions, rewards = zip(*cache)
+
+        self.dqn.train_step(np.array(old_states), np.array(new_states), actions, rewards)
 
     def action_step(self, old_state):
         eps_threshold = EPS_END + (EPS_START - EPS_END) * \
                         math.exp(-1. * self.steps_done / EPS_DECAY)
-
         if random() >= eps_threshold:
-            act = torch.argmax(self.dqn(old_state)).item()
-            print("planned")
+            action = torch.argmax(self.dqn(torch.from_numpy(old_state))).item()
+            #print("planned")
         else:
-            act = randint(0, 3)
-            print("rand")
+            action = randint(0, 3)
+            #print("rand")
 
         self.steps_done += 1
 
-        act = self.set_direction(act)
-        new_state, reward, _, _ = self.step(act)
-        self.cache(old_state, new_state, act, reward)
-        self.dqn.train_step(old_state, new_state, act, reward)
-        return new_state
+        action = self.set_direction(action)
+        new_state, reward, died, won = self.step()
+        self.cache(old_state, new_state, action, reward)
+        self.dqn.train_step(old_state, new_state, action, reward)
+        return died, won
 
-    def step(self, action: int):
+    def step(self, ):
         self.game.update()
-        return self.eval_state(), self.eval_reward(), False, False
+        died = False
+        if self.game.pacman_died:
+            self.game.pacman_died = False
+            died = True
+        # new_state, reward, died, won
+        return self.eval_state(), self.eval_reward(died, False), died, False
 
     def tile_from_pos(self, x, y):
         x = round((x + 4) / 16)
@@ -79,20 +86,25 @@ class PacmanKI:
         return x, y
 
     def eval_state(self):
-        s = torch.zeros(36, 56)
+        s = np.full((36, 56), 0, dtype=np.float32)
 
         for i in self.game.pellets.pelletList:
             tx, ty = self.tile_from_pos(i.position.x, i.position.y)
             s[ty][ty] = 0.5
 
-        for i in self.game.pellets.pelletList:
+        for i in self.game.pallets_eaten:
             tx, ty = self.tile_from_pos(i.position.x, i.position.y)
             s[ty][ty] = 0.4
 
         tx, ty = self.tile_from_pos(self.game.pacman.position.x, self.game.pacman.position.y)
         s[ty][tx] = 1
 
-        return torch.reshape(s, (-1,))
+        for g in self.game.ghosts.ghosts:
+            tx, ty = self.tile_from_pos(g.position.x, g.position.y)
+            s[ty][tx] = 0.1
+
+        s[0][0] = self.game.pacman.direction + 2
+        return s.flatten()
         # pellet format => (x, y, super, eaten)
         for p in self.game.pallets_eaten:
             p.eaten = True
@@ -118,15 +130,23 @@ class PacmanKI:
     def vec2_to_tp(self, vec):
         return [vec.x, vec.y]
 
-    def eval_reward(self):
+    def eval_reward(self, died, won):
         pl = (self.game.pellets.numEaten - self.last_pallets_eaten) * 10
         self.last_pallets_eaten = self.game.pellets.numEaten
         s = 0
         # s = -1 if self.last_pac_pos==self.game.pacman.position else 0
 
         self.last_pac_pos = self.game.pacman.position
+
         r = pl + s
-        print(r)
+
+        if died:
+            r = -150
+
+        if won:
+            r = 500
+
+        print("Reward: "+str(r))
         return [r]
 
     def cache(self, old_state, new_state, action, reward):
@@ -150,7 +170,6 @@ class PacmanKI:
         directions = [LEFT, UP, RIGHT, DOWN]
         if current_direction == STOP:
             current_direction = LEFT
-        print("Current Direction:"+str(current_direction))
 
         if current_direction not in directions:
             raise ValueError("Invalid current direction")
@@ -162,48 +181,60 @@ class PacmanKI:
         new_index = (directions.index(current_direction) + relative_direction) % 4
 
         # Return the new absolute direction
-        print("Direction:"+str(relative_direction)+" -> "+str(directions[new_index]))
         self.game.pacman.want_direction = directions[new_index]
         return directions[new_index]
 
-
     def run(self):
         self.game.startGame()
-        self.game.ghosts.ghosts = []
-        self.last_pac_pos = self.game.pacman.position
-        self.game.pause.setPause(playerPaused=True)
+        self.game.ghosts.ghosts = [self.game.ghosts.ghosts[0]]
+
         self.game.update()
 
         stuck_steps = 0
         last_position_x = 0
         last_position_y = 0
-
+        self.game.pause.setPause(playerPaused=True)
+        episode = 0
         while True:
-            ## x und y sind die Koordinaten des Tiles auf der Map
-            ## Ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
-            x = round((self.game.pacman.position.x + 4) / 16)
-            y = round(self.game.pacman.position.y / 16)
-            if last_position_x != x or last_position_y != y:
-                ## Pacman befindet sich auf einem neuen Tile
-                # print(str(x) + " " + str(y))
-                self.action_step(self.eval_state())
-                self.stuck = False
+            self.last_pac_pos = self.game.pacman.position
+            self.last_pallets_eaten = 0
+            episode += 1
+            # Episode
+            while True:
+                # x und y sind die Koordinaten des Tiles auf der Map
+                # Ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
+                x = round((self.game.pacman.position.x + 4) / 16)
+                y = round(self.game.pacman.position.y / 16)
+                died, won = False, False
+                if last_position_x != x or last_position_y != y:
+                    # Pacman befindet sich auf einem neuen Tile
+                    died, won = self.action_step(self.eval_state())
+                    self.stuck = False
+
+                else:
+                    stuck_steps += 1
+                    self.game.update()
+
+                    if stuck_steps > 4:
+                        # Pacman hat nach in Richtung des Richtung der Wand bewegt
+                        # Wir müssen die Richtung ändern
+                        died, won = self.action_step(self.eval_state())
+
+                        stuck_steps = 0
+
+                last_position_x = x
+                last_position_y = y
+                if died or won:
+                    break
+            print("episode finished")
+            # Episode beendet -> erneutes Trainieren
+            self.train_long()
+
+            if episode%100==0:
+                os.makedirs("models", exist_ok=True)
+                self.dqn.save(os.path.join("models", "episode_"+str(episode)+".pth"))
 
 
-
-            else:
-                stuck_steps += 1
-                # print("Same Position"+ str(stuck_steps))
-                self.game.update()
-
-                if stuck_steps > 4:
-                    ## Pacman hat nach in Richtung des Richtung der Wand bewegt
-                    ## Wir müssen die Richtung ändern
-                    self.action_step(self.eval_state())
-                    stuck_steps = 0
-
-            last_position_x = x
-            last_position_y = y
 
 
 if __name__ == '__main__':
