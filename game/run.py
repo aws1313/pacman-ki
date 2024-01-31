@@ -100,7 +100,7 @@ class GameController(object):
         
 
     def update(self):
-        dt = self.clock.tick(500)/3000
+        dt = self.clock.tick(300)/100
         self.textgroup.update(dt)
         self.pellets.update(dt)
         if not self.pause.paused:
@@ -224,7 +224,9 @@ class GameController(object):
         self.pallets_eaten = []
         self.pause.paused = True
         self.startGame()
+        self.ghosts.ghosts = []
         self.textgroup.updateLevel(self.level)
+        self.pause.setPause(playerPaused=True)
 
     def restartGame(self):
         self.lives = 5
