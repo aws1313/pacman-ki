@@ -22,7 +22,7 @@ class DQN(nn.Module):
         self.loss = nn.MSELoss()
         self.gamma = gamma
         self.flatten = nn.Flatten()
-        self.device = device
+        self.run_device = device
 
 
     def forward(self, x):
@@ -35,11 +35,10 @@ class DQN(nn.Module):
         torch.save(self.state_dict(), name)
 
     def train_step(self, old_state, new_state, action, reward):
-        old_state = torch.from_numpy(old_state).to(self.device)
-        new_state = torch.from_numpy(new_state).to(self.device)
-        action = torch.tensor(action, dtype = torch.float).to(self.device)
-        reward = torch.tensor(reward, dtype=torch.float).to(self.device)
-        print(old_state.shape)
+        old_state = torch.from_numpy(old_state).to(self.run_device)
+        new_state = torch.from_numpy(new_state).to(self.run_device)
+        action = torch.tensor(action, dtype = torch.float).to(self.run_device)
+        reward = torch.tensor(reward, dtype=torch.float).to(self.run_device)
         if len(old_state.shape) == 1:
             old_state = torch.unsqueeze(old_state, 0)
             new_state = torch.unsqueeze(new_state, 0)

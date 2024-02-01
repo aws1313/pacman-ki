@@ -29,7 +29,7 @@ LR = 0.002
 GAMMA = 0.9
 DEVICE = ("cuda" if torch.cuda.is_available() else "cpu")
 
-EPS_START = 0.9
+EPS_START = 1
 EPS_END = 0.05
 EPS_DECAY = .99999
 
@@ -42,13 +42,14 @@ class PacmanKI:
     def __init__(self):
         self.game = GameController()
         self.mem = deque(maxlen=MEM_SIZE)
-        self.dqn = DQN(2016, 32, 4, LR, GAMMA, DEVICE).to(DEVICE)
+        self.dqn = DQN(981, 32, 4, LR, GAMMA, DEVICE).to(DEVICE)
         self.game_count = 0
         self.epsilon = 0
         self.steps_done = 0
         self.last_pallets_eaten = 0
         self.last_pac_pos = None
         self.action_count = 0
+        self.mode_max = True
 
     def train_long(self):
         cache = self.sample_cache()
@@ -91,31 +92,30 @@ class PacmanKI:
         return x, y
 
     def eval_state(self):
-        s = np.full((36, 56), 0, dtype=np.float32)
+        if self.mode_max:
+            s = np.full((36, 56), 0, dtype=np.float32)
 
-        for i in self.game.pellets.pelletList:
-            tx, ty = self.tile_from_pos(i.position.x, i.position.y)
-            s[ty][ty] = 0.5
+            for i in self.game.pellets.pelletList:
+                tx, ty = self.tile_from_pos(i.position.x, i.position.y)
+                s[ty][ty] = 0.5
 
-        for i in self.game.pallets_eaten:
-            tx, ty = self.tile_from_pos(i.position.x, i.position.y)
-            s[ty][ty] = 0.4
+            for i in self.game.pallets_eaten:
+                tx, ty = self.tile_from_pos(i.position.x, i.position.y)
+                s[ty][ty] = 0.4
 
-        tx, ty = self.tile_from_pos(self.game.pacman.position.x, self.game.pacman.position.y)
-        s[ty][tx] = 1
+            tx, ty = self.tile_from_pos(self.game.pacman.position.x, self.game.pacman.position.y)
+            s[ty][tx] = 1
 
-        for g in self.game.ghosts.ghosts:
-            tx, ty = self.tile_from_pos(g.position.x, g.position.y)
-            s[ty][tx] = 0.1
+            for g in self.game.ghosts.ghosts:
+                tx, ty = self.tile_from_pos(g.position.x, g.position.y)
+                s[ty][tx] = 0.1
 
-        s[0][0] = self.game.pacman.direction + 2
-        return s.flatten()
+            s[0][0] = self.game.pacman.direction + 2
+            return s.flatten()
         # pellet format => (x, y, super, eaten)
         for p in self.game.pallets_eaten:
             p.eaten = True
         pellets = []
-        # print(len(self.game.pallets_eaten))
-        # print(len(self.game.pellets.pelletList))
         pellets.extend(self.game.pallets_eaten)
         pellets.extend(self.game.pellets.pelletList)
         pellets.sort(key=operator.attrgetter('id'))
@@ -124,13 +124,18 @@ class PacmanKI:
             sup = isinstance(p, PowerPellet)
             ps.extend([p.position.x, p.position.y, sup, p.eaten])
 
+        ghosts = []
+        for g in self.game.ghosts.ghosts:
+            ghosts.extend([g.position.x, g.position.y])
+
         s = [
+            self.game.pacman.want_direction,
             self.game.pacman.position.x,
             self.game.pacman.position.y
         ]
         s.extend(ps)
-        print(s)
-        return torch.tensor(s, dtype=torch.float)
+        s.extend(ghosts)
+        return np.array(s, dtype=np.float32)
 
     def vec2_to_tp(self, vec):
         return [vec.x, vec.y]
@@ -139,7 +144,7 @@ class PacmanKI:
         pl = (self.game.pellets.numEaten - self.last_pallets_eaten) * 10
         self.last_pallets_eaten = self.game.pellets.numEaten
         # s = 0
-        s = -2 if self.last_pac_pos == self.game.pacman.position else 0
+        s = -3 if self.last_pac_pos == self.game.pacman.position else 0
 
         self.last_pac_pos = self.game.pacman.position
 
@@ -194,7 +199,7 @@ class PacmanKI:
         self.game.ghosts.ghosts = [self.game.ghosts.ghosts[0]]
 
         self.game.update()
-
+        self.mode_max = False
         stuck_steps = 0
         last_position_x = 0
         last_position_y = 0
@@ -206,7 +211,8 @@ class PacmanKI:
             self.action_count = 0
             episode += 1
             # Episode
-            while True:
+            died, won = False, False
+            while not (died or won):
                 # x und y sind die Koordinaten des Tiles auf der Map
                 # Ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
                 x = round((self.game.pacman.position.x + 4) / 16)
@@ -230,8 +236,6 @@ class PacmanKI:
 
                 last_position_x = x
                 last_position_y = y
-                if died or won:
-                    break
             print("episode finished with {} actions".format(self.action_count))
             # Episode beendet -> erneutes Trainieren
             if episode % 50 == 0:
