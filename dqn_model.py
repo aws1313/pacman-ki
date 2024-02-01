@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 class DQN(nn.Module):
-    def __init__(self, inp_size: int, hidden_size, out_size: int, lr, gamma):
+    def __init__(self, inp_size: int, hidden_size, out_size: int, lr, gamma, device):
         super(DQN, self).__init__()
         self.rls = nn.Sequential(
             nn.Linear(inp_size, hidden_size),
@@ -22,6 +22,7 @@ class DQN(nn.Module):
         self.loss = nn.MSELoss()
         self.gamma = gamma
         self.flatten = nn.Flatten()
+        self.device = device
 
 
     def forward(self, x):
@@ -34,10 +35,10 @@ class DQN(nn.Module):
         torch.save(self.state_dict(), name)
 
     def train_step(self, old_state, new_state, action, reward):
-        old_state = torch.from_numpy(old_state)
-        new_state = torch.from_numpy(new_state)
-        action = torch.tensor(action, dtype = torch.float)
-        reward = torch.tensor(reward, dtype=torch.float)
+        old_state = torch.from_numpy(old_state).to(self.device)
+        new_state = torch.from_numpy(new_state).to(self.device)
+        action = torch.tensor(action, dtype = torch.float).to(self.device)
+        reward = torch.tensor(reward, dtype=torch.float).to(self.device)
         print(old_state.shape)
         if len(old_state.shape) == 1:
             old_state = torch.unsqueeze(old_state, 0)

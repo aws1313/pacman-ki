@@ -23,15 +23,17 @@ from random import sample, random, randint
 import numpy as np
 import datetime
 
-MEM_SIZE = 100000
-BATCH_SIZE = 1000
-LR = 0.001
+MEM_SIZE = 1000000000
+BATCH_SIZE = 70000
+LR = 0.002
 GAMMA = 0.9
 DEVICE = ("cuda" if torch.cuda.is_available() else "cpu")
 
 EPS_START = 0.9
 EPS_END = 0.05
-EPS_DECAY = 10000
+EPS_DECAY = .99999
+
+torch.cuda.set_device(0)
 
 StateStep = namedtuple("StateStep", ["old_state", "new_state", "action", "reward"])
 
@@ -40,12 +42,13 @@ class PacmanKI:
     def __init__(self):
         self.game = GameController()
         self.mem = deque(maxlen=MEM_SIZE)
-        self.dqn = DQN(2016, 16, 4, LR, GAMMA)  # .to(DEVICE)
+        self.dqn = DQN(2016, 32, 4, LR, GAMMA, DEVICE).to(DEVICE)
         self.game_count = 0
         self.epsilon = 0
         self.steps_done = 0
         self.last_pallets_eaten = 0
         self.last_pac_pos = None
+        self.action_count = 0
 
     def train_long(self):
         cache = self.sample_cache()
@@ -54,14 +57,16 @@ class PacmanKI:
         self.dqn.train_step(np.array(old_states), np.array(new_states), actions, rewards)
 
     def action_step(self, old_state):
-        eps_threshold = EPS_END + (EPS_START - EPS_END) * \
-                        math.exp(-1. * self.steps_done / EPS_DECAY)
-        if random() >= eps_threshold:
-            action = torch.argmax(self.dqn(torch.from_numpy(old_state))).item()
-            #print("planned")
-        else:
+        global EPS_START
+        print("rand prob: "+str(EPS_START))
+        if random() <= EPS_START:
             action = randint(0, 3)
-            #print("rand")
+        else:
+            action = torch.argmax(self.dqn(torch.from_numpy(old_state).to(DEVICE))).item()
+
+        EPS_START *= EPS_DECAY
+        EPS_START = max(EPS_START, EPS_END)
+        self.action_count += 1
 
         self.steps_done += 1
 
@@ -133,20 +138,20 @@ class PacmanKI:
     def eval_reward(self, died, won):
         pl = (self.game.pellets.numEaten - self.last_pallets_eaten) * 10
         self.last_pallets_eaten = self.game.pellets.numEaten
-        s = 0
-        # s = -1 if self.last_pac_pos==self.game.pacman.position else 0
+        # s = 0
+        s = -2 if self.last_pac_pos == self.game.pacman.position else 0
 
         self.last_pac_pos = self.game.pacman.position
 
-        r = pl + s
+        r = pl + s + 1
 
         if died:
-            r = -150
+            r = -2000
 
         if won:
-            r = 500
+            r = 4000
 
-        print("Reward: "+str(r))
+        print("Reward: " + str(r))
         return [r]
 
     def cache(self, old_state, new_state, action, reward):
@@ -159,11 +164,11 @@ class PacmanKI:
             return self.mem
 
     def set_direction(self, relative_direction: int):
-        ## direction is a int between 0 and 3
-        ## 0 = turn left
-        ## 1 = turn right
-        ## 2 = go straight
-        ## 3 = turn around
+        # direction is a int between 0 and 3
+        # 0 = turn left
+        # 1 = turn right
+        # 2 = go straight
+        # 3 = turn around
         # Convert the relative direction to an absolute direction
 
         current_direction = self.game.pacman.want_direction
@@ -198,6 +203,7 @@ class PacmanKI:
         while True:
             self.last_pac_pos = self.game.pacman.position
             self.last_pallets_eaten = 0
+            self.action_count = 0
             episode += 1
             # Episode
             while True:
@@ -211,7 +217,7 @@ class PacmanKI:
                     died, won = self.action_step(self.eval_state())
                     self.stuck = False
 
-                else:
+                elif not (died or won):
                     stuck_steps += 1
                     self.game.update()
 
@@ -226,15 +232,14 @@ class PacmanKI:
                 last_position_y = y
                 if died or won:
                     break
-            print("episode finished")
+            print("episode finished with {} actions".format(self.action_count))
             # Episode beendet -> erneutes Trainieren
-            self.train_long()
+            if episode % 50 == 0:
+                self.train_long()
 
-            if episode%100==0:
+            if episode % 100 == 0:
                 os.makedirs("models", exist_ok=True)
-                self.dqn.save(os.path.join("models", "episode_"+str(episode)+".pth"))
-
-
+                self.dqn.save(os.path.join("models", "episode_" + str(episode) + ".pth"))
 
 
 if __name__ == '__main__':
