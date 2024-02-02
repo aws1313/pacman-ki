@@ -27,11 +27,11 @@ MEM_SIZE = 1000000000
 BATCH_SIZE = 70000
 LR = 0.002
 GAMMA = 0.9
-DEVICE = ("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = "cpu"
 
 EPS_START = 1
 EPS_END = 0.05
-EPS_DECAY = .99999
+EPS_DECAY = .999997
 
 torch.cuda.set_device(0)
 
@@ -42,14 +42,13 @@ class PacmanKI:
     def __init__(self):
         self.game = GameController()
         self.mem = deque(maxlen=MEM_SIZE)
-        self.dqn = DQN(981, 32, 4, LR, GAMMA, DEVICE).to(DEVICE)
+        self.dqn = DQN(982, 48, 4, LR, GAMMA, DEVICE).to(DEVICE)
         self.game_count = 0
-        self.epsilon = 0
         self.steps_done = 0
         self.last_pallets_eaten = 0
         self.last_pac_pos = None
         self.action_count = 0
-        self.mode_max = True
+        self.alternative_eval_state = True
 
     def train_long(self):
         cache = self.sample_cache()
@@ -92,7 +91,7 @@ class PacmanKI:
         return x, y
 
     def eval_state(self):
-        if self.mode_max:
+        if self.alternative_eval_state:
             s = np.full((36, 56), 0, dtype=np.float32)
 
             for i in self.game.pellets.pelletList:
@@ -126,10 +125,10 @@ class PacmanKI:
 
         ghosts = []
         for g in self.game.ghosts.ghosts:
-            ghosts.extend([g.position.x, g.position.y])
+            ghosts.extend([g.position.x, g.position.y, g.direction])
 
         s = [
-            self.game.pacman.want_direction,
+            self.game.pacman.direction,
             self.game.pacman.position.x,
             self.game.pacman.position.y
         ]
@@ -144,14 +143,14 @@ class PacmanKI:
         pl = (self.game.pellets.numEaten - self.last_pallets_eaten) * 10
         self.last_pallets_eaten = self.game.pellets.numEaten
         # s = 0
-        s = -3 if self.last_pac_pos == self.game.pacman.position else 0
+        s = -4 if self.last_pac_pos == self.game.pacman.position else 0
 
         self.last_pac_pos = self.game.pacman.position
 
         r = pl + s + 1
 
         if died:
-            r = -2000
+            r = -1000
 
         if won:
             r = 4000
@@ -199,7 +198,7 @@ class PacmanKI:
         self.game.ghosts.ghosts = [self.game.ghosts.ghosts[0]]
 
         self.game.update()
-        self.mode_max = False
+        self.alternative_eval_state = False
         stuck_steps = 0
         last_position_x = 0
         last_position_y = 0
@@ -214,7 +213,7 @@ class PacmanKI:
             died, won = False, False
             while not (died or won):
                 # x und y sind die Koordinaten des Tiles auf der Map
-                # Ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
+                # ein tile ist 16x16 Pixel groß und die Map hat ein Offset von 4 Pixeln nach rechts
                 x = round((self.game.pacman.position.x + 4) / 16)
                 y = round(self.game.pacman.position.y / 16)
                 died, won = False, False
@@ -228,8 +227,8 @@ class PacmanKI:
                     self.game.update()
 
                     if stuck_steps > 4:
-                        # Pacman hat nach in Richtung des Richtung der Wand bewegt
-                        # Wir müssen die Richtung ändern
+                        # Pacman bewegt sich in Richtung der Wand
+                        # wir müssen die Richtung ändern
                         died, won = self.action_step(self.eval_state())
 
                         stuck_steps = 0
